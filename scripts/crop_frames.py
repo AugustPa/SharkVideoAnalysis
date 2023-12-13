@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 
+### Angela is the best 
 # Conversion rate from cm to pixel and frame dimensions
 conversion_rate = 0.129291
 frame_height = 2160  # The height of the frames in the video
