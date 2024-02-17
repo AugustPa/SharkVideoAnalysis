@@ -88,7 +88,7 @@ def process_annotation_line(line, angle_radians, angle_degrees, img_width, img_h
     new_x_center, new_y_center, new_width, new_height = get_rotated_bbox(
         x_center, y_center, width, height, angle_radians, img_width, img_height)
 
-    class_id = update_class_id(int(class_id), angle_degrees)
+    #class_id = update_class_id(int(class_id), angle_degrees)
     new_x_center /= img_width
     new_y_center /= img_height
     new_width /= img_width
@@ -127,7 +127,8 @@ def process_dataset(dataset_path):
 
                 image = Image.open(image_path)
 
-                for angle_degrees in [45, 90, 135, 180, 225, 270, 315]:
+                #for angle_degrees in [45, 90, 135, 180, 225, 270, 315]:
+                for angle_degrees in [90, 180, 270]:
                     angle_radians = np.radians(angle_degrees)
                     rotated_image = image.rotate(-angle_degrees, expand=True)
 
@@ -153,7 +154,7 @@ def process_dataset(dataset_path):
                         file.write('\n'.join(rotated_annotations))
 
 # Path to your dataset directory
-dataset_path = '/Users/apaula/Downloads/fishschool-6'
+dataset_path = '/Users/apaula/Downloads/fishschool-7'
 process_dataset(dataset_path)
 
 print("Dataset processing complete.")
