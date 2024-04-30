@@ -1,0 +1,13 @@
+name: shark
+channels:
+  - defaults
+dependencies:
+  - python=3.11  # Adjust the Python version as needed
+  - numpy
+  - matplotlib
+  - opencv
+  - pillow
+  - pip
+  - pip:
+    - sahi
+    - ultralytics
