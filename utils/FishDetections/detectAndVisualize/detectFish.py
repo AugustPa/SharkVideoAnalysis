@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from ultralytics import YOLO
 import os
+import datetime
 
 def tile_image(image, tile_size=640, overlap=0.2):
     """
@@ -24,6 +25,7 @@ def tile_image(image, tile_size=640, overlap=0.2):
 
 def detect_objects_on_tiles(tiles, model):
     all_boxes = []
+    all_scores = []
     all_classes = []
     for tile, position in tiles:
         # Save the tile temporarily (required for your model's input format)
@@ -37,45 +39,70 @@ def detect_objects_on_tiles(tiles, model):
         # Adjust box coordinates and extract class information based on the tile position
         for detection in json_results:
             box = detection['box']
+            score = detection['confidence']  # Replace with your model's confidence score field
             x1, y1, x2, y2 = int(box['x1']), int(box['y1']), int(box['x2']), int(box['y2'])
-            all_boxes.append((x1 + position[0], y1 + position[1], x2 + position[0], y2 + position[1]))
+            all_boxes.append([x1 + position[0], y1 + position[1], x2 + position[0], y2 + position[1]])
+            all_scores.append(score)
             all_classes.append(detection['class'])
 
         # Cleanup: Delete the temporary tile file
         os.remove(temp_tile_path)
 
-    return all_boxes, all_classes
+    # Convert boxes for NMS
+    boxes_for_nms = [[x, y, x2-x1, y2-y1] for [x, y, x2, y2] in all_boxes]
 
-def draw_boxes_on_frame_with_color_wheel(frame, boxes, classes, class_labels, colors, frame_index):
-    # Create a subplot layout
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(120, 60), gridspec_kw={'width_ratios': [3, 1]})
-    # Plot the frame with bounding boxes
-    ax1.imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    # Apply NMS
+    indices = cv2.dnn.NMSBoxes(boxes_for_nms, all_scores, score_threshold=0.01, nms_threshold=0.999)
+
+    # Filter out boxes using indices from NMS
+    unique_boxes = []
+    unique_classes = []
+    for index in indices:
+        # Check if index is a scalar (i.e., a single number) or an array
+        if np.isscalar(index):
+            i = index
+        else:
+            i = index[0]  # Extract the actual index value
+
+        # Append the unique boxes and classes
+        unique_boxes.append(all_boxes[i])
+        unique_classes.append(all_classes[i])
+
+    return unique_boxes, unique_classes, tiles
+
+def draw_boxes_on_frame(frame, boxes, classes, class_labels, colors, frame_index, output_dir):
+    fig, ax = plt.subplots(figsize=(64, 36))  # Adjust for 4K resolution
+    ax.imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     for box, cls in zip(boxes, classes):
         x1, y1, x2, y2 = box
         color = colors[cls % len(colors)]
-        rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color, facecolor='none')
-        ax1.add_patch(rect)
-    ax1.axis('off')
-
-    # Create the color wheel in the second subplot
-    num_classes = len(class_labels)
-    label_to_angle = {'east': 0, 'northeast': np.pi/4, 'north': np.pi/2, 'northwest': 3*np.pi/4,
-                      'west': np.pi, 'southwest': 5*np.pi/4, 'south': 3*np.pi/2, 'southeast': 7*np.pi/4}
-    angles = [label_to_angle[label] for label in class_labels]
-    ax2 = plt.subplot(122, polar=True)
-    ax2.set_theta_zero_location('E')
-    ax2.set_theta_direction(1)
-    ax2.set_xticks(angles)
-    ax2.set_xticklabels(class_labels)
-    ax2.set_yticklabels([])
-    for ang, color in zip(angles, colors):
-        ax2.bar(ang, 1, width=2*np.pi/num_classes, color=color, bottom=0.4)
-
+        # draw the center point instead of th e box
+        rect = patches.Circle((x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2), radius=5, linewidth=8, edgecolor=color, facecolor='none')
+        #rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color, facecolor='none')
+        ax.add_patch(rect)
+    ax.axis('off')
     plt.tight_layout()
-    plt.savefig(f'plot_{frame_index}.png')
+    formatted_frame_index = str(frame_index).zfill(4)
+    plt.savefig(os.path.join(output_dir, f'plot_{formatted_frame_index}.png'), dpi=75)
     plt.close()
-    print(f"Plot saved as: plot_{frame_index}.png")
+
+def draw_boxes_on_tile(tile, position, boxes, classes, class_labels, colors):
+    # Create a copy of the tile to draw on
+    tile_with_boxes = tile.copy()
+
+    for box, cls in zip(boxes, classes):
+        x1, y1, x2, y2 = box
+        # Adjust box coordinates based on the tile position
+        x1, x2 = x1 - position[0], x2 - position[0]
+        y1, y2 = y1 - position[1], y2 - position[1]
+
+        # Draw the bounding box on the tile
+        color = colors[cls % len(colors)]
+        cv2.rectangle(tile_with_boxes, (x1, y1), (x2, y2), color, 2)
+        label = class_labels[cls]
+        cv2.putText(tile_with_boxes, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+    return tile_with_boxes
 
 def sample_frames_from_video(video_path, num_samples):
     cap = cv2.VideoCapture(video_path)
@@ -90,30 +117,62 @@ def sample_frames_from_video(video_path, num_samples):
     cap.release()
     return sampled_frames
 
-def process_video_and_save_detections(video_path, num_samples, model_path, output_path):
-    # Load the YOLO model
+def process_video_and_save_detections(video_path, model_path, output_folder, start_frame=0, end_frame=None):
     model = YOLO(model_path)
-    frames = sample_frames_from_video(video_path, num_samples)
-    all_detections = []  # To store detections for all frames
 
-    for i, frame in enumerate(frames):
-        tiles = tile_image(frame)
-        boxes, classes = detect_objects_on_tiles(tiles, model)
-        all_detections.append({'boxes': boxes, 'classes': classes})
+    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.join(output_folder, current_time)
+    os.makedirs(output_dir, exist_ok=True)
 
-        # Optional: Draw and save the plot for each frame
-        # draw_boxes_on_frame_with_color_wheel(frame, boxes, classes, class_labels, colors, i)
+    cap = cv2.VideoCapture(video_path)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # If end_frame is not specified or is beyond the total frame count, set it to the last frame
+    if end_frame is None or end_frame > frame_count:
+        end_frame = frame_count
 
-    # Save all detections to a file
-    with open(output_path, 'w') as file:
-        json.dump(all_detections, file)
+    # Set the starting frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
-    print(f"All detections saved to {output_path}")
+    detections_file = os.path.join(output_dir, 'detections.json')
+    with open(detections_file, 'a') as file:
+        tile_index = 0
+        for i in range(start_frame, end_frame):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            tiles = tile_image(frame)
+            boxes, classes, tiles_with_positions = detect_objects_on_tiles(tiles, model)
+
+            # Process each tile
+            for (tile, position) in tiles_with_positions:
+                tile_boxes = [box for box, (x, y, x2, y2) in zip(boxes, boxes) if position[0] <= x < position[0] + tile.shape[1] and position[1] <= y < position[1] + tile.shape[0]]
+                tile_classes = [cls for cls, box in zip(classes, boxes) if position[0] <= box[0] < position[0] + tile.shape[1] and position[1] <= box[1] < position[1] + tile.shape[0]]
+                
+                tile_with_boxes = draw_boxes_on_tile(tile, position, tile_boxes, tile_classes, class_labels, colors)
+                tile_file_path = os.path.join(output_dir, f'tile_{tile_index}.jpg')
+                cv2.imwrite(tile_file_path, tile_with_boxes)
+
+                # Write tile information and detections
+                tile_data = {'tile_index': tile_index, 'position': position, 'boxes': tile_boxes, 'classes': tile_classes}
+                json.dump(tile_data, file)
+                file.write("\n")
+
+                tile_index += 1
+
+            # Draw and save the plot for each frame
+            draw_boxes_on_frame(frame, boxes, classes, class_labels, colors, i+1, output_dir)
+
+    cap.release()
+    print(f"All detections saved to {detections_file}")
+
 
 # Example usage
 model_path = '/Users/apaula/Downloads/fishschool_0102.pt'
 video_path = '/Users/apaula/Downloads/fishschool_trimmed.mp4'
-num_samples = 5
+output_folder = '/Users/apaula/Downloads/'
+num_samples = 100
 output_path = 'detections.json'
 class_labels = ['east', 'north', 'northeast', 'northwest', 'south', 'southeast', 'southwest', 'west']
 colors = [
@@ -126,5 +185,4 @@ colors = [
     (0.216, 0.0, 1.0),     # Southwest - Electric Blue
     (0.0, 0.624, 1.0)      # West - Sky Blue
 ]
-
-process_video_and_save_detections(video_path, num_samples, model_path, output_path)
+process_video_and_save_detections(video_path, model_path, output_folder,start_frame=4790, end_frame=4791)

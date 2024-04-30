@@ -1,6 +1,8 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 def load_properties(json_path):
     with open(json_path, 'r') as file:
@@ -18,7 +20,7 @@ def plot_properties(frame_index, frame_shape):
 
     # Fill in the maps
     for prop in properties:
-        x, y = int(prop['x']/5), int(prop['y']/5)
+        x, y = int(prop['x']/10), int(prop['y']/10)
         density = prop['density']
         polarization = prop['polarization']
         orientation = prop['mean_orientation']
@@ -57,6 +59,45 @@ def plot_properties(frame_index, frame_shape):
     plt.tight_layout()
     plt.show()
 
+def plot_properties_2(frame_index, frame_shape):
+    properties_path = f'frame_{frame_index}_properties.json'
+    properties = load_properties(properties_path)
+
+    # Initialize an empty HSV image
+    hsv_image = np.zeros((frame_shape[0], frame_shape[1], 3))
+    
+    # Normalize density (if necessary)
+    max_density = max([prop['density'] for prop in properties]) if properties else 1
+
+
+    for prop in properties:
+        x, y = int(prop['x']/10), int(prop['y']/10)
+        density = prop['density'] / max_density  # Normalizing density
+        polarization = prop['polarization']
+        orientation = prop['mean_orientation']
+
+        x = min(x, frame_shape[1] - 1)
+        y = min(y, frame_shape[0] - 1)
+
+        # Map properties to HSV
+        hue = orientation * 180 / np.pi  # Convert to degrees
+        saturation = polarization
+        value = density
+
+        hsv_image[y, x, 0] = hue
+        hsv_image[y, x, 1] = saturation
+        hsv_image[y, x, 2] = value
+
+    # Convert HSV to RGB for plotting
+    rgb_image = cv2.cvtColor(hsv_image.astype('float32'), cv2.COLOR_HSV2RGB)
+
+    # Plot
+    plt.imshow(rgb_image)
+    plt.title('Combined Properties Visualization')
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.show()
+
 # Example usage
-frame_shape = (430, 614, 3)  # Adjust to your frame shape
+frame_shape = (215, 307, 3)  # Adjust to your frame shape
 plot_properties(frame_index=0, frame_shape=frame_shape)

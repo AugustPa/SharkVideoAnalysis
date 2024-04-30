@@ -1,19 +1,23 @@
 import cv2
 import math
+import os
+import numpy as np
 
-# Function to slice the frame into 10x10 tiles
-def slice_frame_to_tiles(frame, num_tiles=10):
+# Function to extract tiles of specified size from a frame at random positions
+def extract_random_tiles(frame, tile_size, num_tiles):
     tiles = []
     height, width, _ = frame.shape
-    M, N = height // num_tiles, width // num_tiles
-    for y in range(0, height, M):
-        for x in range(0, width, N):
-            tile = frame[y:y+M, x:x+N]
-            tiles.append(tile)
+    
+    for _ in range(num_tiles):
+        y = np.random.randint(0, height - tile_size + 1)
+        x = np.random.randint(0, width - tile_size + 1)
+        tile = frame[y:y+tile_size, x:x+tile_size]
+        tiles.append(tile)
+    
     return tiles
 
 # Load the video
-video_path = '/Users/apaula/Downloads/20230314_110636077_blue_DJI_0149_trimmed.mov'  # Replace with your video path
+video_path = '/Volumes/T7-August/trex/20240220_175636912_DJI_20240220175636_0003_V.MP4'
 cap = cv2.VideoCapture(video_path)
 
 # Check if video opened successfully
@@ -21,26 +25,36 @@ if not cap.isOpened():
     print("Error: Could not open video.")
     exit()
 
-# FPS and frame interval settings
-fps = 50  # Frames per second
-frame_interval = 2  # Interval in seconds for frame capture
+# Extract the video name for folder creation
+video_name = video_path.split('/')[-1].split('.')[0]
+tiles_folder = f'{video_name}_tiles9'
+os.makedirs(tiles_folder, exist_ok=True)
+
+# Extract 'DJI_20240220175636' part from the video name
+dji_part = video_name.split('_')[2]
+
+# Settings for tile extraction
+tile_size = 320  # Tile size
+num_tiles_per_frame = 5  # Number of tiles to extract per selected frame
+selected_frames = np.random.choice(range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))), size=300, replace=False)
 
 # Process video
-current_time = 0
+current_frame_index = 0
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
 
-    # Check if it's time to capture the frame
-    if math.isclose(current_time % frame_interval, 0, abs_tol=1e-2):
-        tiles = slice_frame_to_tiles(frame)
+    # Check if the current frame is one of the selected frames
+    if current_frame_index in selected_frames:
+        tiles = extract_random_tiles(frame, tile_size, num_tiles_per_frame)
+        
         # Save each tile
         for i, tile in enumerate(tiles):
-            filename = f'frame_{math.floor(current_time)}_tile_{i}.jpg'
+            filename = f'{tiles_folder}/{dji_part}_frame_{current_frame_index}_tile_{i}.jpg'
             cv2.imwrite(filename, tile)
-
-    current_time += 1 / fps
+    
+    current_frame_index += 1
 
 # Release the video capture object
 cap.release()

@@ -33,8 +33,8 @@ def calculate_sampled_properties(detections, frame_shape, radius, step):
                     region_orientations.append(class_to_angle[cls])
 
             if region_orientations:
-                mean_orientation = np.mean(region_orientations)
-                polarization = np.std(region_orientations)
+                mean_orientation = calc_mean_orientation(region_orientations)
+                polarization = calc_polarization(region_orientations)
                 density = len(region_orientations) / (np.pi * radius ** 2)
                 sampled_properties.append({'x': x, 'y': y, 'density': density, 
                                            'mean_orientation': mean_orientation, 
@@ -42,11 +42,32 @@ def calculate_sampled_properties(detections, frame_shape, radius, step):
 
     return sampled_properties
 
+def calc_mean_orientation(orientations):
+    """
+    Calculate the mean of a list of orientations (angles).
+    :param orientations: List or array of angles (in radians).
+    :return: Mean angle (in radians).
+    """
+    sin_sum = np.mean(np.sin(orientations))
+    cos_sum = np.mean(np.cos(orientations))
+    return np.arctan2(sin_sum, cos_sum)
+
+def calc_polarization(orientations):
+    """
+    Calculate the polarization of a list of orientations (angles).
+    :param orientations: List or array of angles (in radians).
+    :return: Polarization value.
+    """
+    sin_avg = np.mean(np.sin(orientations))
+    cos_avg = np.mean(np.cos(orientations))
+    return np.sqrt(sin_avg**2 + cos_avg**2)
+
+
 # Example usage
 json_path = '/Users/apaula/src/SharkVideoAnalysis/detections.json'  # Path to your JSON file
 frame_shape = (2160,3840,3)  # Example frame shape, adjust to your actual frame size
-radius = 500  # Example radius
-step = 5    # Sample every 10th pixel
+radius = 150  # Example radius
+step = 10    # Sample every 10th pixel
 
 detections_data = load_detections(json_path)
 for frame_index, detections in enumerate(detections_data):

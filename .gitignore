@@ -3,3 +3,5 @@
 
 # Ignore all .json files
 *.json
+*.jpg
+*.mp4
