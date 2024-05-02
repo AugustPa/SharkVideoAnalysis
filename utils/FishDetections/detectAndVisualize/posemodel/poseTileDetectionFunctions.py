@@ -13,14 +13,39 @@ def tile_frame(frame, tile_size=320, overlap=0.4):
     stride = int(tile_size * (1 - overlap))
     tiles = []
     tile_positions = []  # To track the original position of each tile in the frame
-    
-    for y in range(0, frame.shape[0] - tile_size + 1, stride):
-        for x in range(0, frame.shape[1] - tile_size + 1, stride):
-            tile = frame[y:y+tile_size, x:x+tile_size]
+    height, width, _ = frame.shape
+
+    # Ensure the entire frame is covered by adjusting the range to include the last tiles
+    for y in range(0, height - tile_size + 1, stride):
+        for x in range(0, width - tile_size + 1, stride):
+            tile = frame[y:y + tile_size, x:x + tile_size]
             tiles.append(tile)
             tile_positions.append((x, y))
-            
+    
+    # Check for any remaining areas along the width
+    if (width % tile_size) > 0 or (width - tile_size) % stride != 0:
+        x = width - tile_size
+        for y in range(0, height - tile_size + 1, stride):
+            tile = frame[y:y + tile_size, x:x + tile_size]
+            tiles.append(tile)
+            tile_positions.append((x, y))
+
+    # Check for any remaining areas along the height
+    if (height % tile_size) > 0 or (height - tile_size) % stride != 0:
+        y = height - tile_size
+        for x in range(0, width - tile_size + 1, stride):
+            tile = frame[y:y + tile_size, x:x + tile_size]
+            tiles.append(tile)
+            tile_positions.append((x, y))
+
+    # Check for the bottom-right corner if necessary
+    if (width % tile_size) > 0 or (width - tile_size) % stride != 0 or (height % tile_size) > 0 or (height - tile_size) % stride != 0:
+        tile = frame[height - tile_size:height, width - tile_size:width]
+        tiles.append(tile)
+        tile_positions.append((width - tile_size, height - tile_size))
+
     return tiles, tile_positions
+
 
 #this function runs the model on each tile and returns the results
 def detect_pose_in_tile(tile, model, confidence_threshold=0.3, distance_range=(25, 100)):
