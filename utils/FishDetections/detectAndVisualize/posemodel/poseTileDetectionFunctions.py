@@ -206,27 +206,51 @@ def process_frame(frame, model, tile_size, overlap, confidence_threshold, distan
     aggregated_detections = aggregate_detections(tiled_detections, tile_positions, tile_size)
     final_detections = remove_duplicates_by_keypoints(aggregated_detections, similarity_threshold=20)
     return final_detections
+
+def calculate_angles(kp_pairs):
+    # Calculate the difference in coordinates
+    deltas = kp_pairs[:, 1, :] - kp_pairs[:, 0, :]
+    # Calculate the angle using arctan2, which returns angles in radians
+    angles = np.arctan2(deltas[:, 1], deltas[:, 0])
+    return angles
+
 def visualize_detections(frame, detections):
     """
-    Visualize detections with bounding boxes and keypoints on the frame.
+    Visualize detections with skeletons (lines between keypoints) on the frame,
+    colored according to the angle of the line.
 
     Args:
     frame (numpy.ndarray): The original image frame.
     detections (list of dicts): List of detections, each detection is a dict with 'bbox' and 'keypoints'.
     """
     for detection in detections:
-        # Draw bounding box
-        bbox = detection['bbox']
-        cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0, 255, 0), 2)
-        
-        # Draw keypoints
         if 'keypoints' in detection and 'points' in detection['keypoints']:
-            for point in detection['keypoints']['points']:
-                cv2.circle(frame, (int(point[0]), int(point[1])), 5, (0, 0, 255), -1)
-    
+            keypoints = detection['keypoints']['points']
+            if keypoints.shape[0] == 2:  # Ensure there are exactly two keypoints to form a line
+                # Calculate angle for each pair of keypoints
+                kp_pairs = np.expand_dims(keypoints, axis=0)  # Reshape to simulate a batch of one
+                angles = calculate_angles(kp_pairs)
+                normalized_angles = (angles + np.pi) / (2 * np.pi)  # Normalize to [0, 1]
+                
+                # Get color for the line based on the angle
+                colormap = cm.get_cmap('hsv')
+                color = colormap(normalized_angles[0])  # Get the first and only element
+                
+                # Convert color from RGBA to BGR, which OpenCV expects
+                color_bgr = (color[0] * 255, color[1] * 255, color[2] * 255)
+                
+                # Draw the line
+                cv2.line(frame, (int(keypoints[0][0]), int(keypoints[0][1])), 
+                         (int(keypoints[1][0]), int(keypoints[1][1])), color_bgr, 2)
+    print('Done visualizing detections.')
+    output_path = '/Users/apaula/src/SharkVideoAnalysis/utils/FishDetections/detectAndVisualize/posemodel/output/skeletons_colored_by_angle.jpg'
+    directory = os.path.dirname(output_path)
 
-    # Optionally, save the image
-    cv2.imwrite('allDetectionsFrame.jpg', frame)
+    # If the directory doesn't exist, create it
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    cv2.imwrite(output_path, frame)
 # Main execution logic for testing (modify as needed)
 if __name__ == '__main__':
     # Example call to process tiles and save detections
