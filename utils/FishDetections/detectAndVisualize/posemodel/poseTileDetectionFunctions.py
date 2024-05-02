@@ -125,7 +125,83 @@ def process_tiles_and_save_detections(tiles, model, save_dir='detected_tiles'):
         # Assuming your detection function returns a list of detections for the tile
         detections = detect_pose_in_tile(tile, model)
         draw_detections_and_save(tile, detections, save_dir, i)
+import numpy as np
 
+def aggregate_detections(tiled_detections, tile_positions, tile_size=320):
+    full_frame_detections = []
+    for tile_detections, (x_offset, y_offset) in zip(tiled_detections, tile_positions):
+        for detection in tile_detections:
+            bbox = detection['bbox']
+            adjusted_bbox = (
+                bbox[0] + x_offset,
+                bbox[1] + y_offset,
+                bbox[2] + x_offset,
+                bbox[3] + y_offset
+            )
+            if 'keypoints' in detection:
+                keypoints = detection['keypoints']
+                adjusted_points = keypoints['points'] + np.array([x_offset, y_offset])
+                adjusted_keypoints = {
+                    'points': adjusted_points,
+                    'confidence': keypoints['confidence']
+                }
+                detection['keypoints'] = adjusted_keypoints
+            detection['bbox'] = adjusted_bbox
+            full_frame_detections.append(detection)
+    return full_frame_detections
+
+def keypoint_similarity(kp1, kp2):
+    if kp1.shape != kp2.shape:
+        raise ValueError("Keypoint sets must have the same size and dimension.")
+    distances = np.linalg.norm(kp1 - kp2, axis=1)
+    average_distance = np.mean(distances)
+    return average_distance
+
+def remove_duplicates_by_keypoints(detections, similarity_threshold=20):
+    n = len(detections)
+    if n == 0:
+        return []
+    detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
+    keep = []
+    removed = [False] * n
+    for i in range(n):
+        if not removed[i]:
+            keep.append(detections[i])
+            for j in range(i+1, n):
+                if not removed[j] and 'keypoints' in detections[i] and 'keypoints' in detections[j]:
+                    kp_sim = keypoint_similarity(detections[i]['keypoints']['points'], detections[j]['keypoints']['points'])
+                    if kp_sim < similarity_threshold:
+                        removed[j] = True
+    return keep
+# Example function that processes a video frame
+
+def process_frame(frame, model, tile_size, overlap, confidence_threshold, distance_range):
+    tiles, tile_positions = tile_frame(frame, tile_size, overlap)
+    tiled_detections = [detect_pose_in_tile(tile, model, confidence_threshold, distance_range) for tile in tiles]
+    aggregated_detections = aggregate_detections(tiled_detections, tile_positions, tile_size)
+    final_detections = remove_duplicates_by_keypoints(aggregated_detections, similarity_threshold=20)
+    return final_detections
+def visualize_detections(frame, detections):
+    """
+    Visualize detections with bounding boxes and keypoints on the frame.
+
+    Args:
+    frame (numpy.ndarray): The original image frame.
+    detections (list of dicts): List of detections, each detection is a dict with 'bbox' and 'keypoints'.
+    """
+    for detection in detections:
+        # Draw bounding box
+        bbox = detection['bbox']
+        cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0, 255, 0), 2)
+        
+        # Draw keypoints
+        if 'keypoints' in detection and 'points' in detection['keypoints']:
+            for point in detection['keypoints']['points']:
+                cv2.circle(frame, (int(point[0]), int(point[1])), 5, (0, 0, 255), -1)
+    
+
+    # Optionally, save the image
+    cv2.imwrite('allDetectionsFrame.jpg', frame)
 # Main execution logic for testing (modify as needed)
 if __name__ == '__main__':
     # Example call to process tiles and save detections
@@ -134,4 +210,5 @@ if __name__ == '__main__':
     frame = cv2.imread(image_path)
     tiles, tile_positions = tile_frame(frame)  # Unpack both tiles and their positions
     model = YOLO('/Users/apaula/Library/CloudStorage/GoogleDrive-elysiacristata@gmail.com/My Drive/datasets/runs/pose/train9/weights/best.pt')  # Load your model
-    process_tiles_and_save_detections(tiles, model)
+    detections=process_frame(frame, model, 320, 0.4, 0.3, (25, 100))  # Process the frame and get detections
+    visualize_detections(frame, detections)  # Visualize the detections on the frame
