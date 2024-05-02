@@ -251,6 +251,48 @@ def visualize_detections(frame, detections):
         os.makedirs(directory)
 
     cv2.imwrite(output_path, frame)
+
+def process_video(video_path, output_dir, model, tile_size=320, overlap=0.4, confidence_threshold=0.3, distance_range=(25, 100)):
+    """
+    Process a video, applying tile-based detection and visualization to each frame.
+
+    Args:
+    video_path (str): Path to the input video file.
+    output_dir (str): Directory to save the output frames and detection data.
+    model (YOLO): The detection model loaded and ready to use.
+    tile_size (int): Size of each tile to cut from the frame.
+    overlap (float): Overlap percentage for tiling.
+    confidence_threshold (float): Threshold for detection confidence.
+    distance_range (tuple): Range of acceptable distances between keypoints.
+    """
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    cap = cv2.VideoCapture(video_path)
+    frame_idx = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Process each frame
+        tiles, tile_positions = tile_frame(frame, tile_size, overlap)
+        tiled_detections = [detect_pose_in_tile(tile, model, confidence_threshold, distance_range) for tile in tiles]
+        aggregated_detections = aggregate_detections(tiled_detections, tile_positions, tile_size)
+        final_detections = remove_duplicates_by_keypoints(aggregated_detections, similarity_threshold=20)
+        
+        # Visualize detections on the frame
+        visualize_detections(frame, final_detections)
+
+        # Save the visualized frame
+        cv2.imwrite(f'{output_dir}/frame_{frame_idx:04d}.jpg', frame)
+        frame_idx += 1
+
+    cap.release()
+    print("Video processing completed.")
+    
 # Main execution logic for testing (modify as needed)
 if __name__ == '__main__':
     # Example call to process tiles and save detections
