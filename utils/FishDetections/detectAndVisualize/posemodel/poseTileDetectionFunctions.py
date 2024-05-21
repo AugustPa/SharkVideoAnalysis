@@ -4,9 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from ultralytics import YOLO 
+import json
 
 # Load the YOLO model
-model = YOLO('/Users/apaula/Library/CloudStorage/GoogleDrive-elysiacristata@gmail.com/My Drive/datasets/runs/pose/train9/weights/best.pt')
+model = YOLO('/home/flyvr01/Desktop/best.pt')
+
 
 #this function takes a frame and tiles it into smaller images
 def tile_frame(frame, tile_size=320, overlap=0.4):
@@ -150,7 +152,6 @@ def process_tiles_and_save_detections(tiles, model, save_dir='detected_tiles'):
         # Assuming your detection function returns a list of detections for the tile
         detections = detect_pose_in_tile(tile, model)
         draw_detections_and_save(tile, detections, save_dir, i)
-import numpy as np
 
 def aggregate_detections(tiled_detections, tile_positions, tile_size=320):
     full_frame_detections = []
@@ -243,41 +244,51 @@ def visualize_detections(frame, detections):
                 cv2.line(frame, (int(keypoints[0][0]), int(keypoints[0][1])), 
                          (int(keypoints[1][0]), int(keypoints[1][1])), color_bgr, 2)
     print('Done visualizing detections.')
-    output_path = '/Users/apaula/src/SharkVideoAnalysis/utils/FishDetections/detectAndVisualize/posemodel/output/skeletons_colored_by_angle.jpg'
-    directory = os.path.dirname(output_path)
+    # Set the base path relative to this script file
+    base_path = os.path.dirname(__file__)  # Gets the directory in which the script is located
+    image_path = os.path.join(base_path, 'outputTest', 'skeletons_colored_by_angle.jpg')
+    directory = os.path.dirname(image_path)
 
     # If the directory doesn't exist, create it
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    cv2.imwrite(output_path, frame)
+    #cv2.imwrite(image_path, frame)
+
+def numpy_to_list(data):
+    """ Recursively converts numpy arrays in the given data structure to lists. """
+    if isinstance(data, np.ndarray):
+        return data.tolist()
+    elif isinstance(data, dict):
+        return {k: numpy_to_list(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [numpy_to_list(item) for item in data]
+    else:
+        return data
+    
+def get_last_frame_index(file_path='last_frame.txt'):
+    try:
+        with open(file_path, 'r') as f:
+            return int(f.readline().strip())
+    except FileNotFoundError:
+        return 0  # If the file doesn't exist, start from the beginning
 
 def process_video(video_path, output_dir, model, tile_size=320, overlap=0.4, confidence_threshold=0.3, distance_range=(25, 100)):
-    """
-    Process a video, applying tile-based detection and visualization to each frame.
-
-    Args:
-    video_path (str): Path to the input video file.
-    output_dir (str): Directory to save the output frames and detection data.
-    model (YOLO): The detection model loaded and ready to use.
-    tile_size (int): Size of each tile to cut from the frame.
-    overlap (float): Overlap percentage for tiling.
-    confidence_threshold (float): Threshold for detection confidence.
-    distance_range (tuple): Range of acceptable distances between keypoints.
-    """
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     cap = cv2.VideoCapture(video_path)
-    frame_idx = 0
+    start_frame_index = get_last_frame_index()
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)  # Start from the last processed frame
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
+        frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1  # Get current frame index
         
-        # Process each frame
+         # Process each frame
         tiles, tile_positions = tile_frame(frame, tile_size, overlap)
         tiled_detections = [detect_pose_in_tile(tile, model, confidence_threshold, distance_range) for tile in tiles]
         aggregated_detections = aggregate_detections(tiled_detections, tile_positions, tile_size)
@@ -287,19 +298,31 @@ def process_video(video_path, output_dir, model, tile_size=320, overlap=0.4, con
         visualize_detections(frame, final_detections)
 
         # Save the visualized frame
-        cv2.imwrite(f'{output_dir}/frame_{frame_idx:04d}.jpg', frame)
-        frame_idx += 1
+        frame_output_path = f'{output_dir}/frame_{frame_idx:04d}.jpg'
+        cv2.imwrite(frame_output_path, frame)
+        
+                # Convert numpy arrays in detections to lists
+        final_detections = numpy_to_list(final_detections)
 
+        # Save detection data to JSON file
+        detection_output_path = f'{output_dir}/detections_{frame_idx:04d}.json'
+        with open(detection_output_path, 'w') as file:
+            json.dump(final_detections, file, indent=4)
+
+        frame_idx += 1
+    
+        # After processing:
+        save_progress(frame_idx)
     cap.release()
     print("Video processing completed.")
+
+# Save the current frame index to a file
+def save_progress(frame_index, file_path='last_frame.txt'):
+    with open(file_path, 'w') as f:
+        f.write(str(frame_index))
+
     
 # Main execution logic for testing (modify as needed)
 if __name__ == '__main__':
     # Example call to process tiles and save detections
-    # Load the image
-    image_path = '/Users/apaula/src/SharkVideoAnalysis/20240219_184319_poseDetections/temp_frame.jpg'
-    frame = cv2.imread(image_path)
-    tiles, tile_positions = tile_frame(frame)  # Unpack both tiles and their positions
-    model = YOLO('/Users/apaula/Library/CloudStorage/GoogleDrive-elysiacristata@gmail.com/My Drive/datasets/runs/pose/train9/weights/best.pt')  # Load your model
-    detections=process_frame(frame, model, 320, 0.4, 0.3, (25, 100))  # Process the frame and get detections
-    visualize_detections(frame, detections)  # Visualize the detections on the frame
+    process_video('/home/flyvr01/Desktop/20240303_075408147_DJI_0999.MP4', '/home/flyvr01/src/SharkVideoAnalysis/utils/FishDetections/detectAndVisualize/posemodel/processedDJI_0999', model)
