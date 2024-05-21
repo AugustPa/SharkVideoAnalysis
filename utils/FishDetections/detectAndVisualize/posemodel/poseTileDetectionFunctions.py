@@ -73,12 +73,15 @@ def detect_pose_in_tile(tile, model, confidence_threshold=0.3, distance_range=(2
                     kp_data = results_object.keypoints.data[i]
                     points = kp_data[:, :2].cpu().numpy()  # Keypoint coordinates
 
+                    # Exclude keypoints with coordinates containing 0
+                    valid_points = points[(points[:, 0] != 0) & (points[:, 1] != 0)]
+
                     # Calculate distances between pairs of keypoints and apply filtering
-                    if len(points) > 1:  # Ensure there are at least two points to form a pair
-                        distances = np.linalg.norm(points[0] - points[1], axis=0)
+                    if len(valid_points) > 1:  # Ensure there are at least two points to form a pair
+                        distances = np.linalg.norm(valid_points[0] - valid_points[1], axis=0)
                         if distance_range[0] <= distances <= distance_range[1]:
                             detection['keypoints'] = {
-                                'points': points,
+                                'points': valid_points,
                                 'confidence': kp_data[:, 2].cpu().numpy()  # Keypoint confidences
                             }
 
